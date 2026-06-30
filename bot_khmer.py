@@ -33,7 +33,7 @@ WEB_SECRET = os.getenv('WEB_SECRET', 'change_me_123')
 
 # Profile settings (editable via web)
 ADMIN_NAME = os.getenv('ADMIN_NAME', 'CHEATZ')
-ADMIN_AVATAR_URL = os.getenv('ADMIN_AVATAR_URL', 'https://i.imgur.com/HeGEEbu.png')  # default avatar
+ADMIN_AVATAR_URL = os.getenv('ADMIN_AVATAR_URL', 'https://i.imgur.com/HeGEEbu.png')
 LESSONS_SENT_TODAY = 0
 TOTAL_SENT_ALL_TIME = 0
 
@@ -49,9 +49,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ------- Web Server with Trading Dashboard -------
+# ------- Web Server with Trading Dashboard + PWA -------
 class WebHandler(BaseHTTPRequestHandler):
-    # We'll keep global references to mutable profile data
     admin_name = ADMIN_NAME
     admin_avatar = ADMIN_AVATAR_URL
     lessons_today = LESSONS_SENT_TODAY
@@ -63,6 +62,12 @@ class WebHandler(BaseHTTPRequestHandler):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Trading Bot">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="{WebHandler.admin_avatar}">
     <title>📊 Trading Bot Dashboard</title>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
@@ -73,6 +78,7 @@ class WebHandler(BaseHTTPRequestHandler):
             min-height: 100vh;
             padding: 20px;
             background-image: radial-gradient(circle at 30% 40%, #1a2b4c 0%, #0b0f1c 60%);
+            -webkit-tap-highlight-color: transparent;
         }}
         .container {{
             max-width: 700px;
@@ -116,8 +122,6 @@ class WebHandler(BaseHTTPRequestHandler):
             70% {{ box-shadow: 0 0 0 10px rgba(0,200,83,0); }}
             100% {{ box-shadow: 0 0 0 0 rgba(0,200,83,0); }}
         }}
-
-        /* Profile card */
         .profile-card {{
             background: rgba(25, 35, 55, 0.8);
             border-radius: 16px;
@@ -171,8 +175,6 @@ class WebHandler(BaseHTTPRequestHandler):
             background: #00d2ff22;
             box-shadow: 0 0 12px #00d2ff66;
         }}
-
-        /* Stats */
         .stats-grid {{
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -200,8 +202,6 @@ class WebHandler(BaseHTTPRequestHandler):
             margin-top: 5px;
             font-size: 0.9rem;
         }}
-
-        /* Animated chart */
         .chart-container {{
             background: rgba(20, 30, 48, 0.9);
             border-radius: 16px;
@@ -248,8 +248,6 @@ class WebHandler(BaseHTTPRequestHandler):
             0% {{ height: 30%; }}
             100% {{ height: 80%; }}
         }}
-
-        /* Trigger button */
         .trigger-section {{
             text-align: center;
             margin-bottom: 25px;
@@ -271,8 +269,6 @@ class WebHandler(BaseHTTPRequestHandler):
             transform: translateY(-2px);
             box-shadow: 0 8px 25px rgba(0, 210, 255, 0.5);
         }}
-
-        /* Message area */
         .message {{
             background: #00c85322;
             border: 1px solid #00c853;
@@ -283,8 +279,6 @@ class WebHandler(BaseHTTPRequestHandler):
             text-align: center;
             animation: fadeIn 0.5s;
         }}
-
-        /* Profile edit form (hidden by default) */
         .edit-form {{
             background: rgba(20, 30, 48, 0.95);
             border: 1px solid #00d2ff44;
@@ -313,8 +307,6 @@ class WebHandler(BaseHTTPRequestHandler):
             font-weight: bold;
             cursor: pointer;
         }}
-
-        /* Footer */
         .footer {{
             text-align: center;
             color: #666;
@@ -325,13 +317,10 @@ class WebHandler(BaseHTTPRequestHandler):
 </head>
 <body>
 <div class="container">
-    <!-- Header -->
     <div class="header">
         <div class="logo">📈 Trading Bot</div>
         <div class="status-badge">● Live</div>
     </div>
-
-    <!-- Profile card -->
     <div class="profile-card">
         <img class="avatar" src="{WebHandler.admin_avatar}" alt="Admin" id="avatar-img">
         <div class="profile-info">
@@ -340,8 +329,6 @@ class WebHandler(BaseHTTPRequestHandler):
             <button class="btn-edit" onclick="toggleEdit()">✎ កែប្រែ Profile</button>
         </div>
     </div>
-
-    <!-- Edit form -->
     <div class="edit-form" id="edit-form">
         <form method="POST" action="/update-profile">
             <input type="hidden" name="secret" value="{WEB_SECRET}">
@@ -352,8 +339,6 @@ class WebHandler(BaseHTTPRequestHandler):
             <button type="submit" class="btn-save">💾 រក្សាទុក</button>
         </form>
     </div>
-
-    <!-- Stats -->
     <div class="stats-grid">
         <div class="stat-box">
             <div class="stat-value">{WebHandler.lessons_today}</div>
@@ -364,8 +349,6 @@ class WebHandler(BaseHTTPRequestHandler):
             <div class="stat-label">សរុបទាំងអស់</div>
         </div>
     </div>
-
-    <!-- Live chart animation -->
     <div class="chart-container">
         <div class="chart-title">📊 តារាង Trading (ចលនា)</div>
         <div class="chart">
@@ -380,8 +363,6 @@ class WebHandler(BaseHTTPRequestHandler):
             </div>
         </div>
     </div>
-
-    <!-- Trigger -->
     <div class="trigger-section">
         <form method="POST" action="/trigger">
             <input type="hidden" name="secret" value="{WEB_SECRET}">
@@ -389,13 +370,15 @@ class WebHandler(BaseHTTPRequestHandler):
         </form>
         {message}
     </div>
-
-    <div class="footer">
-        Trading Lesson Bot v2.0 | Powered by Render & Python
-    </div>
+    <div class="footer">Trading Lesson Bot v2.0 | Powered by Render & Python</div>
 </div>
-
 <script>
+    // Register service worker for PWA offline support
+    if ('serviceWorker' in navigator) {{
+        navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('SW registered', reg))
+            .catch(err => console.log('SW failed', err));
+    }}
     function toggleEdit() {{
         var f = document.getElementById('edit-form');
         f.style.display = f.style.display === 'block' ? 'none' : 'block';
@@ -408,10 +391,72 @@ class WebHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(html.encode('utf-8'))
 
+    def _serve_manifest(self):
+        manifest = {
+            "name": "Trading Bot Dashboard",
+            "short_name": "TradingBot",
+            "description": "Control your Telegram Trading Bot",
+            "start_url": "/admin",
+            "display": "standalone",
+            "background_color": "#0b0f1c",
+            "theme_color": "#00d2ff",
+            "icons": [
+                {
+                    "src": WebHandler.admin_avatar,
+                    "sizes": "192x192",
+                    "type": "image/png"
+                },
+                {
+                    "src": WebHandler.admin_avatar,
+                    "sizes": "512x512",
+                    "type": "image/png"
+                }
+            ]
+        }
+        data = json.dumps(manifest)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "max-age=3600")
+        self.end_headers()
+        self.wfile.write(data.encode('utf-8'))
+
+    def _serve_sw(self):
+        sw_js = """
+const CACHE_NAME = 'trading-bot-v1';
+const urlsToCache = [
+  '/admin',
+  '/'
+];
+
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(urlsToCache))
+  );
+});
+
+self.addEventListener('fetch', event => {
+  event.respondWith(
+    caches.match(event.request)
+      .then(response => response || fetch(event.request))
+  );
+});
+"""
+        self.send_response(200)
+        self.send_header("Content-Type", "application/javascript")
+        self.send_header("Cache-Control", "max-age=86400")
+        self.end_headers()
+        self.wfile.write(sw_js.encode('utf-8'))
+
     def do_GET(self):
         parsed = urlparse(self.path)
-        if parsed.path in ["/", "/admin"]:
+        path = parsed.path
+        if path in ["/", "/admin"]:
             self._render_dashboard()
+        elif path == "/manifest.json":
+            self._serve_manifest()
+        elif path == "/sw.js":
+            self._serve_sw()
         else:
             self.send_response(200)
             self.end_headers()
@@ -448,7 +493,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 WebHandler.admin_name = new_name
             if new_avatar:
                 WebHandler.admin_avatar = new_avatar
-            # Redirect back to dashboard to reflect changes
+            # Redirect back to dashboard
             self.send_response(302)
             self.send_header("Location", "/admin")
             self.end_headers()
