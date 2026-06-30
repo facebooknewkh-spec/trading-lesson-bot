@@ -113,3 +113,6 @@
 2026-06-30 14:47:29,266 - INFO - Application started
 2026-06-30 14:47:29,266 - INFO - 🤖 Bot បានចាប់ផ្ដើម ហើយកំពុងស្ដាប់ /send
 2026-06-30 14:47:30,083 - INFO - ⏰ កាលវិភាគត្រូវបានកំណត់នៅម៉ោង 07:00
+2026-06-30 15:17:52,515 - INFO - Application is stopping. This might take a moment.
+2026-06-30 15:17:52,517 - INFO - Application.stop() complete
+2026-06-30 15:17:52,518 - INFO - Bot បានបញ្ឈប់
