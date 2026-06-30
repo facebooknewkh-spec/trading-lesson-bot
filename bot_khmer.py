@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
 """
-Telegram Bot - បោះមេរៀន 30 រៀងរាល់ព្រឹក 07:00 និងមាន Command /send
+Telegram Bot - បោះមេរៀន 30 រៀងរាល់ព្រឹក 07:00
+មាន Command /send និង Web Control Panel នៅ /admin
 """
 
 import asyncio
 import logging
 import sys
 import os
-from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
+import json
 import threading
+import time
 
 from telegram import Update, Bot
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
 import schedule
-import time
 
 from lessons_data import LESSONS, TOTAL_LESSONS
 
@@ -27,8 +29,9 @@ GROUP_CHAT_ID = os.getenv('GROUP_CHAT_ID')
 TOPIC_ID = os.getenv('TOPIC_ID')
 SEND_TIME = os.getenv('SEND_TIME', '07:00')
 ADMIN_USER_ID = os.getenv('ADMIN_USER_ID')
+# Secret key for web access (change to something strong)
+WEB_SECRET = os.getenv('WEB_SECRET', 'change_me_123')
 
-# Port for health check (Render provides PORT)
 PORT = int(os.environ.get('PORT', 10000))
 
 logging.basicConfig(
@@ -41,21 +44,99 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ------- Health check HTTP server -------
-class HealthHandler(BaseHTTPRequestHandler):
+# ------- Web Server with Control Panel -------
+class WebHandler(BaseHTTPRequestHandler):
+    # Simple HTML template
+    def _serve_html(self, message=""):
+        html = f"""
+        <!DOCTYPE html>
+        <html lang="km">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>📚 Trading Bot Control</title>
+            <style>
+                body {{ font-family: sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
+                h1 {{ color: #333; }}
+                .status {{ background: #e8f5e9; padding: 15px; border-radius: 8px; margin-bottom: 20px; }}
+                button {{ background: #1976d2; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 6px; cursor: pointer; }}
+                button:hover {{ background: #1565c0; }}
+                .msg {{ margin-top: 20px; color: green; font-weight: bold; }}
+                .error {{ color: red; }}
+            </style>
+        </head>
+        <body>
+            <h1>🤖 Telegram Bot Control</h1>
+            <div class="status">
+                <p>✅ Bot កំពុងដំណើរការ</p>
+                <p>📅 កាលវិភាគផ្ញើប្រចាំថ្ងៃ: {SEND_TIME}</p>
+            </div>
+            <form method="POST" action="/trigger">
+                <input type="hidden" name="secret" value="{WEB_SECRET}">
+                <button type="submit">📨 បោះមេរៀនទាំង 30 ឥឡូវនេះ</button>
+            </form>
+            {message}
+        </body>
+        </html>
+        """
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(html.encode('utf-8'))
+
     def do_GET(self):
+        parsed = urlparse(self.path)
+        if parsed.path == "/" or parsed.path == "/admin":
+            self._serve_html()
+        else:
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"Bot is running")
+
+    def do_HEAD(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is running")
+
+    def do_POST(self):
+        if self.path == "/trigger":
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length).decode('utf-8')
+            params = parse_qs(post_data)
+            secret = params.get('secret', [''])[0]
+
+            if secret != WEB_SECRET:
+                self.send_response(403)
+                self.end_headers()
+                self.wfile.write(b"Forbidden")
+                return
+
+            # Trigger sending in a separate thread to avoid blocking
+            threading.Thread(target=self._trigger_send).start()
+            self._serve_html('<div class="msg">🚀 កំពុងបោះមេរៀនទាំង 30... សូមពិនិត្យ Telegram Group</div>')
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def _trigger_send(self):
+        """Run the async send function using a new event loop in this thread"""
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            bot = Bot(token=BOT_TOKEN)
+            loop.run_until_complete(scheduled_send_all(bot))
+            logger.info("Web trigger: បញ្ចប់ការបោះមេរៀន")
+        except Exception as e:
+            logger.error(f"Web trigger error: {e}")
+        finally:
+            loop.close()
 
 def run_web_server():
-    server = HTTPServer(('0.0.0.0', PORT), HealthHandler)
-    logger.info(f"🌐 Health check server started on port {PORT}")
+    server = HTTPServer(('0.0.0.0', PORT), WebHandler)
+    logger.info(f"🌐 Web panel available at http://your-render-url.onrender.com/admin")
     server.serve_forever()
 
-# ------- មុខងារ Command /send -------
+# ------- Telegram Command /send -------
 async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ពេល Admin ផ្ញើ /send, បោះមេរៀនទាំង 30 ភ្លាមៗ"""
     user_id = update.effective_user.id
     if ADMIN_USER_ID and str(user_id) != ADMIN_USER_ID:
         await update.message.reply_text("⛔ អ្នកមិនមានសិទ្ធិប្រើពាក្យបញ្ជានេះទេ។")
@@ -85,7 +166,7 @@ async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"❌ កំហុសមេរៀនទី {lesson['id']}: {e}")
     await update.message.reply_text("🏁 បញ្ចប់ការបោះមេរៀនទាំង 30")
 
-# ------- មុខងារ Scheduled Task -------
+# ------- Scheduled Task -------
 async def scheduled_send_all(bot: Bot):
     logger.info("🚀 កាលវិភាគ៖ បោះមេរៀនទាំង 30")
     for lesson in LESSONS:
@@ -125,25 +206,21 @@ async def main():
         logger.error("❌ BOT_TOKEN ឬ GROUP_CHAT_ID មិនបានកំណត់!")
         return
 
-    # Start health check web server in a daemon thread (required for Render Web Service)
+    # Start web server with control panel
     web_thread = threading.Thread(target=run_web_server, daemon=True)
     web_thread.start()
 
-    # កម្មវិធី Telegram Bot (ស្ដាប់ Command)
+    # Telegram bot
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("send", send_command))
     await application.initialize()
     await application.start()
     logger.info("🤖 Bot បានចាប់ផ្ដើម ហើយកំពុងស្ដាប់ /send")
 
-    # បង្កើត Bot instance សម្រាប់កាលវិភាគ
     bot = Bot(token=BOT_TOKEN)
-
-    # ចាប់ផ្ដើមកាលវិភាគក្នុង Thread ដាច់ដោយឡែក
     schedule_thread = threading.Thread(target=run_schedule, args=(bot,), daemon=True)
     schedule_thread.start()
 
-    # រង់ចាំសញ្ញាបិទ (Ctrl+C)
     try:
         while True:
             await asyncio.sleep(1)
