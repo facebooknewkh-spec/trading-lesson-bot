@@ -559,9 +559,7 @@ async def _do_send_all(bot: Bot):
             header += f"📂 ប្រភេទ: <b>{lesson['category']}</b>\n"
             header += f"📝 មេរៀនទី {lesson['id']}/{TOTAL_LESSONS}\n"
             header += "━" * 35 + "\n\n"
-            # Escape the content safely, preserving HTML tags
-            safe_content = _escape_html_except_tags(lesson['content'])
-            message_html = header + safe_content
+            message_html = header + lesson['content']
 
             kwargs = {
                 'chat_id': GROUP_CHAT_ID,
@@ -571,11 +569,19 @@ async def _do_send_all(bot: Bot):
             if TOPIC_ID:
                 kwargs['message_thread_id'] = int(TOPIC_ID)
 
-            await bot.send_message(**kwargs)
-            logger.info(f"✅ បានបញ្ជូនមេរៀនទី {lesson['id']}")
+            try:
+                await bot.send_message(**kwargs)
+                logger.info(f"✅ បានបញ្ជូនមេរៀនទី {lesson['id']}")
+            except Exception as first_err:
+                # If HTML fails, send as plain text without formatting
+                plain_kwargs = kwargs.copy()
+                plain_kwargs.pop('parse_mode', None)
+                await bot.send_message(**plain_kwargs)
+                logger.warning(f"⚠️ មេរៀនទី {lesson['id']} បញ្ជូនជាអត្ថបទធម្មតា (បរាជ័យ HTML: {first_err})")
+
             await asyncio.sleep(1)
         except Exception as e:
-            logger.error(f"❌ កំហុសមេរៀនទី {lesson['id']}: {e}")
+            logger.error(f"❌ កំហុសមេរៀនទី {lesson['id']} (សូម្បីតែអត្ថបទធម្មតាក៏មិនបាន): {e}")
 
     LESSONS_SENT_TODAY += 1
     TOTAL_SENT_ALL_TIME += 1
