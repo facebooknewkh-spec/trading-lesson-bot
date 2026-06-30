@@ -1,0 +1,15 @@
+# លុប requirements.txt ចាស់
+Remove-Item requirements.txt
+
+# បង្កើត requirements.txt ថ្មី
+@"
+python-telegram-bot>=20.7
+python-dotenv>=1.0.0
+schedule>=1.2.0
+requests>=2.31.0
+pandas>=2.2.0
+numpy>=1.26.0
+ta>=0.11.0
+ccxt>=4.2.0
+yfinance>=0.2.36
+"@ | Out-File -FilePath requirements.txt -Encoding UTF8
