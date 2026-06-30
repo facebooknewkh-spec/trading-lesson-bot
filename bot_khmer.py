@@ -8,6 +8,8 @@ import asyncio
 import logging
 import sys
 import os
+import re
+from html import escape
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import json
@@ -33,7 +35,7 @@ WEB_SECRET = os.getenv('WEB_SECRET', 'change_me_123')
 
 # Profile settings (editable via web)
 ADMIN_NAME = os.getenv('ADMIN_NAME', 'CHEATZ')
-ADMIN_AVATAR_URL = os.getenv('ADMIN_AVATAR_URL', 'https://i.imgur.com/HeGEEbu.png')
+ADMIN_AVATAR_URL = os.getenv('ADMIN_AVATAR_URL', 'https://i.pinimg.com/originals/9e/91/a4/9e91a4091ddefa0c580a803794719971.png')
 LESSONS_SENT_TODAY = 0
 TOTAL_SENT_ALL_TIME = 0
 
@@ -48,6 +50,26 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# ------- Utility: HTML escape while preserving tags -------
+def _escape_html_except_tags(text):
+    """Escape <, >, & in plain text but keep HTML tags intact."""
+    def repl(match):
+        part = match.group(0)
+        if part.startswith('<') and part.endswith('>'):
+            return part  # keep HTML tags as is
+        return escape(part)
+    # Split by tags: anything between < and >
+    parts = re.split(r'(<[^>]+>)', text)
+    escaped_parts = [repl(re.match(r'(.+?)', p)) if not (p.startswith('<') and p.endswith('>')) else p for p in parts]
+    # The above logic is simplified: we'll just iterate through parts
+    result = []
+    for part in parts:
+        if part.startswith('<') and part.endswith('>'):
+            result.append(part)
+        else:
+            result.append(escape(part))
+    return ''.join(result)
 
 # ------- Web Server with Trading Dashboard + PWA -------
 class WebHandler(BaseHTTPRequestHandler):
@@ -537,7 +559,9 @@ async def _do_send_all(bot: Bot):
             header += f"📂 ប្រភេទ: <b>{lesson['category']}</b>\n"
             header += f"📝 មេរៀនទី {lesson['id']}/{TOTAL_LESSONS}\n"
             header += "━" * 35 + "\n\n"
-            message_html = header + lesson['content']
+            # Escape the content safely, preserving HTML tags
+            safe_content = _escape_html_except_tags(lesson['content'])
+            message_html = header + safe_content
 
             kwargs = {
                 'chat_id': GROUP_CHAT_ID,
@@ -547,20 +571,11 @@ async def _do_send_all(bot: Bot):
             if TOPIC_ID:
                 kwargs['message_thread_id'] = int(TOPIC_ID)
 
-            try:
-                await bot.send_message(**kwargs)
-                logger.info(f"✅ បានបញ្ជូនមេរៀនទី {lesson['id']}")
-            except Exception as first_err:
-                # បើមានកំហុស (ឧ. Can't parse entities) សូមព្យាយាមផ្ញើជាអត្ថបទធម្មតា
-                plain_kwargs = kwargs.copy()
-                plain_kwargs['text'] = message_html  # នៅតែជាអត្ថបទដដែល ប៉ុន្តែគ្មាន parse_mode
-                plain_kwargs.pop('parse_mode', None)
-                await bot.send_message(**plain_kwargs)
-                logger.warning(f"⚠️ មេរៀនទី {lesson['id']} បញ្ជូនជាអត្ថបទធម្មតា (បរាជ័យ HTML: {first_err})")
-
+            await bot.send_message(**kwargs)
+            logger.info(f"✅ បានបញ្ជូនមេរៀនទី {lesson['id']}")
             await asyncio.sleep(1)
         except Exception as e:
-            logger.error(f"❌ កំហុសមេរៀនទី {lesson['id']} (សូម្បីតែអត្ថបទធម្មតាក៏មិនបាន): {e}")
+            logger.error(f"❌ កំហុសមេរៀនទី {lesson['id']}: {e}")
 
     LESSONS_SENT_TODAY += 1
     TOTAL_SENT_ALL_TIME += 1
