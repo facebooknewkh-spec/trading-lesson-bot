@@ -554,34 +554,59 @@ async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def _do_send_all(bot: Bot):
     global LESSONS_SENT_TODAY, TOTAL_SENT_ALL_TIME
     for lesson in LESSONS:
-        try:
-            header = f"📚 <b>មេរៀន Trading</b>\n"
-            header += f"📂 ប្រភេទ: <b>{lesson['category']}</b>\n"
-            header += f"📝 មេរៀនទី {lesson['id']}/{TOTAL_LESSONS}\n"
-            header += "━" * 35 + "\n\n"
-            message_html = header + lesson['content']
-
-            kwargs = {
-                'chat_id': GROUP_CHAT_ID,
-                'text': message_html,
-                'parse_mode': ParseMode.HTML
-            }
-            if TOPIC_ID:
-                kwargs['message_thread_id'] = int(TOPIC_ID)
-
+        success = False
+        while not success:
             try:
-                await bot.send_message(**kwargs)
-                logger.info(f"✅ បានបញ្ជូនមេរៀនទី {lesson['id']}")
-            except Exception as first_err:
-                # If HTML fails, send as plain text without formatting
-                plain_kwargs = kwargs.copy()
-                plain_kwargs.pop('parse_mode', None)
-                await bot.send_message(**plain_kwargs)
-                logger.warning(f"⚠️ មេរៀនទី {lesson['id']} បញ្ជូនជាអត្ថបទធម្មតា (បរាជ័យ HTML: {first_err})")
+                header = f"📚 <b>មេរៀន Trading</b>\n"
+                header += f"📂 ប្រភេទ: <b>{lesson['category']}</b>\n"
+                header += f"📝 មេរៀនទី {lesson['id']}/{TOTAL_LESSONS}\n"
+                header += "━" * 35 + "\n\n"
+                message_html = header + lesson['content']
 
-            await asyncio.sleep(1)
-        except Exception as e:
-            logger.error(f"❌ កំហុសមេរៀនទី {lesson['id']} (សូម្បីតែអត្ថបទធម្មតាក៏មិនបាន): {e}")
+                kwargs = {
+                    'chat_id': GROUP_CHAT_ID,
+                    'text': message_html,
+                    'parse_mode': ParseMode.HTML
+                }
+                if TOPIC_ID:
+                    kwargs['message_thread_id'] = int(TOPIC_ID)
+
+                # Try HTML first
+                try:
+                    await bot.send_message(**kwargs)
+                    logger.info(f"✅ បានបញ្ជូនមេរៀនទី {lesson['id']}")
+                except Exception as first_err:
+                    # If HTML fails due to parse error, send plain text
+                    if "Can't parse entities" in str(first_err):
+                        plain_kwargs = kwargs.copy()
+                        plain_kwargs.pop('parse_mode', None)
+                        await bot.send_message(**plain_kwargs)
+                        logger.warning(f"⚠️ មេរៀនទី {lesson['id']} បញ្ជូនជាអត្ថបទធម្មតា (HTML parse error)")
+                    else:
+                        # Other error (like flood control) – re-raise to outer try
+                        raise first_err
+
+                success = True  # message sent, break while loop
+
+            except Exception as e:
+                err_str = str(e)
+                if "Flood control exceeded" in err_str:
+                    # Extract retry seconds from error message
+                    import re
+                    match = re.search(r'Retry in (\d+) seconds', err_str)
+                    if match:
+                        wait = int(match.group(1))
+                    else:
+                        wait = 30  # default fallback
+                    logger.warning(f"⏳ Telegram flood control – រង់ចាំ {wait} វិនាទី...")
+                    await asyncio.sleep(wait)
+                    # Then retry the same lesson
+                else:
+                    logger.error(f"❌ កំហុសមេរៀនទី {lesson['id']}: {e}")
+                    success = True  # skip this lesson, don't retry forever
+
+        # Normal delay between lessons (to avoid flooding)
+        await asyncio.sleep(2)
 
     LESSONS_SENT_TODAY += 1
     TOTAL_SENT_ALL_TIME += 1
