@@ -8,13 +8,15 @@ import logging
 import sys
 import os
 from datetime import datetime
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
+
 from telegram import Update, Bot
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
 import schedule
 import time
-import threading
 
 from lessons_data import LESSONS, TOTAL_LESSONS
 
@@ -24,7 +26,10 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 GROUP_CHAT_ID = os.getenv('GROUP_CHAT_ID')
 TOPIC_ID = os.getenv('TOPIC_ID')
 SEND_TIME = os.getenv('SEND_TIME', '07:00')
-ADMIN_USER_ID = os.getenv('ADMIN_USER_ID')  # លេខ User ID របស់អ្នក
+ADMIN_USER_ID = os.getenv('ADMIN_USER_ID')
+
+# Port for health check (Render provides PORT)
+PORT = int(os.environ.get('PORT', 10000))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,6 +40,18 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# ------- Health check HTTP server -------
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running")
+
+def run_web_server():
+    server = HTTPServer(('0.0.0.0', PORT), HealthHandler)
+    logger.info(f"🌐 Health check server started on port {PORT}")
+    server.serve_forever()
 
 # ------- មុខងារ Command /send -------
 async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -107,6 +124,10 @@ async def main():
     if not BOT_TOKEN or not GROUP_CHAT_ID:
         logger.error("❌ BOT_TOKEN ឬ GROUP_CHAT_ID មិនបានកំណត់!")
         return
+
+    # Start health check web server in a daemon thread (required for Render Web Service)
+    web_thread = threading.Thread(target=run_web_server, daemon=True)
+    web_thread.start()
 
     # កម្មវិធី Telegram Bot (ស្ដាប់ Command)
     application = Application.builder().token(BOT_TOKEN).build()
