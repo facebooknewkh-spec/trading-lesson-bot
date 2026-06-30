@@ -1,7 +1,4 @@
-# លុប requirements.txt ចាស់
-Remove-Item requirements.txt
 
-# បង្កើត requirements.txt ថ្មី
 @"
 python-telegram-bot>=20.7
 python-dotenv>=1.0.0
